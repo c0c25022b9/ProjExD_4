@@ -267,6 +267,58 @@ class Gravity(pg.sprite.Sprite):
             self.kill()
 
 
+
+class Emp(pg.sprite.Sprite):
+    """
+    発動時に存在する敵機と爆弾を無効化する
+    発動条件"e"キー押す,スコアが20以上
+    消費スコア 20
+    """
+    def __init__(self, emys: pg.sprite.Group, bombs: pg.sprite.Group, screen: pg.Surface):
+        super().__init__()
+        self.image = pg.Surface((WIDTH, HEIGHT))
+        pg.draw.rect(self.image, (255, 255, 0), (0, 0, WIDTH, HEIGHT))
+        self.image.set_alpha(100)
+        self.rect = self.image.get_rect()
+        self.life = 3
+
+        for emy in emys: # 敵機の無効化
+            emy.interval = float("inf") # 爆弾投下インターバル無限大（これで投下できなくなります）
+            
+            # --- ラプラシアンフィルタ（風）のエフェクト処理 ---
+            # 敵機の画像をコピーして、ピクセル操作で色を反転（ネガポジ・サイバー風に）
+            filter_img = emy.image.copy()
+            pxarray = pg.PixelArray(filter_img)
+            
+            # 画面の透明色（カラーキー）を取得して、透過部分はそのまま、実体部分だけ反転
+            colorkey = emy.image.get_colorkey()
+            for x in range(filter_img.get_width()):
+                for y in range(filter_img.get_height()):
+                    # 元の色を取得
+                    raw_color = emy.image.get_at((x, y))
+                    # 透明部分（アルファ値0またはカラーキーと同じ色）は無視
+                    if raw_color.a == 0 or (colorkey and raw_color[:3] == colorkey[:3]):
+                        continue
+                    
+                    # RGBを反転してラプラシアン／サイバー風の見た目にする
+                    r = 255 - raw_color.r
+                    g = 255 - raw_color.g
+                    b = 255 - raw_color.b
+                    pxarray[x, y] = (r, g, b)
+            
+            del pxarray # PixelArrayを解放してSurfaceをロック解除
+            emy.image = filter_img # 変更した画像を敵機に適用
+
+        for bomb in bombs: # 爆弾の無効化
+            bomb.speed /= 2
+            bomb.state = "inactive"
+
+    def update(self):
+        self.life -= 1
+        if self.life < 0:
+            self.kill()
+        
+
 def main():
     pg.display.set_caption("真！こうかとん無双")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
@@ -278,7 +330,6 @@ def main():
     beams = pg.sprite.Group()
     exps = pg.sprite.Group()
     emys = pg.sprite.Group()
-    gravities = pg.sprite.Group()
 
     tmr = 0
     clock = pg.time.Clock()
@@ -289,12 +340,6 @@ def main():
                 return 0
             if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
                 beams.add(Beam(bird))
-
-        # 重力場の発動条件
-            if event.type == pg.KEYDOWN and event.key == pg.K_RETURN and score.value > 200:
-                gravities.add(Gravity(400))  # 発動時間400フレームで生成
-                score.value -= 200           # スコアを200消費
-
         screen.blit(bg_img, [0, 0])
 
         if tmr%200 == 0:  # 200フレームに1回，敵機を出現させる
@@ -328,6 +373,10 @@ def main():
             score.update(screen)
             pg.display.update()
             time.sleep(2)
+
+        for bomb in pg.sprite.spritecollide(bird, bombs, True):
+            if bomb.state == "inactive":
+                continue
             return
 
         bird.update(key_lst, screen)
@@ -341,6 +390,8 @@ def main():
         bombs.draw(screen)
         exps.update()
         exps.draw(screen)
+        emps.update()
+        emps.draw(screen)
         score.update(screen)
         pg.display.update()
         tmr += 1
