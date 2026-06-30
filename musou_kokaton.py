@@ -241,30 +241,31 @@ class Score:
         self.image = self.font.render(f"Score: {self.value}", 0, self.color)
         screen.blit(self.image, self.rect)
 
-class Gravity(pg.sprite.Sprite):
+class Life:
     """
-    追加機能２：画面全体を覆う重力場に関するクラス
-    発動時間（life）の間、範囲内の敵機と爆弾を消滅させる
+    追加機能１：こうかとんの残機数（ライフ）を表示・管理するクラス
     """
-    def __init__(self, life: int):
-        super().__init__()
-        # 手順１：画面全体と同じサイズの空のSurfaceを生成
-        self.image = pg.Surface((WIDTH, HEIGHT))
-        # 手順２：上記Surfaceに黒い矩形をdrawする
-        pg.draw.rect(self.image, (0, 0, 0), (0, 0, WIDTH, HEIGHT))
-        # 手順３：透明度を設定（128は半透明）
-        self.image.set_alpha(128)
-        
-        self.rect = self.image.get_rect()
-        self.life = life
+    def __init__(self, num: int):
+        self.num = num
+        self.image = pg.Surface((40, 40))
+        self.image.set_colorkey((0, 0, 0))  # 黒色部分を透明化
+        # ハートの形でござんす
+        points = [
+            (16 * math.sin(t / 100) ** 3 + 20, 
+             -(13 * math.cos(t / 100) - 5 * math.cos(2 * t / 100) - 2 * math.cos(3 * t / 100) - math.cos(4 * t / 100)) + 20) 
+            for t in range(0, 628)
+        ]
+        pg.draw.polygon(self.image, (255, 0, 0), points)  # 空のSurfaceに赤色のハートをdraw
 
-    def update(self):
-        """
-        発動時間を1ずつ減算し、0未満になったら消滅（kill）する
-        """
-        self.life -= 1
-        if self.life < 0:
-            self.kill()
+    def update(self, screen: pg.Surface):
+        # 残機数（self.num）の分だけハートを並べて描画する
+        for i in range(self.num):
+            # 最右ハートの重心（中心）が下から50，右から50の位置
+            # 40x40のSurfaceの中心を(WIDTH-50, HEIGHT-50)にするため、左上座標は(WIDTH-70, HEIGHT-70)
+            # i番目のハートは左に並べるため、x座標から i * 40 を引く
+            x = (WIDTH - 70) - i * 40
+            y = HEIGHT - 70
+            screen.blit(self.image, (x, y))
 
 
 def main():
@@ -273,12 +274,13 @@ def main():
     bg_img = pg.image.load(f"fig/pg_bg.jpg")
     score = Score()
 
+    life = Life(3)
+
     bird = Bird(3, (900, 400))
     bombs = pg.sprite.Group()
     beams = pg.sprite.Group()
     exps = pg.sprite.Group()
     emys = pg.sprite.Group()
-    gravities = pg.sprite.Group()
 
     tmr = 0
     clock = pg.time.Clock()
@@ -289,12 +291,6 @@ def main():
                 return 0
             if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
                 beams.add(Beam(bird))
-
-        # 重力場の発動条件
-            if event.type == pg.KEYDOWN and event.key == pg.K_RETURN and score.value > 200:
-                gravities.add(Gravity(400))  # 発動時間400フレームで生成
-                score.value -= 200           # スコアを200消費
-
         screen.blit(bg_img, [0, 0])
 
         if tmr%200 == 0:  # 200フレームに1回，敵機を出現させる
@@ -314,27 +310,18 @@ def main():
             exps.add(Explosion(bomb, 50))  # 爆発エフェクト
             score.value += 1  # 1点アップ
 
-        # 重力場と敵機・爆弾の衝突処理
-        # 重力場と衝突した敵機リスト（敵機を削除True、重力場は削除しないFalse）
-        for emy in pg.sprite.groupcollide(emys, gravities, True, False).keys():
-            exps.add(Explosion(emy, 100))  # 爆発エフェクト
-            
-        # 重力場と衝突した爆弾リスト（爆弾を削除True、重力場は削除しないFalse）
-        for bomb in pg.sprite.groupcollide(bombs, gravities, True, False).keys():
-            exps.add(Explosion(bomb, 50))  # 爆発エフェクト
-
         for bomb in pg.sprite.spritecollide(bird, bombs, True):  # こうかとんと衝突した爆弾リスト
+            life.num -= 1  # 追加機能１：爆弾に当たるたびに1減算
             bird.change_img(8, screen)  # こうかとん悲しみエフェクト
-            score.update(screen)
-            pg.display.update()
-            time.sleep(2)
-            return
+            if life.num <= 0:  # 追加機能１：残機数が0になったらゲームオーバー
+                score.update(screen)
+                pg.display.update()
+                time.sleep(2)
+                return
 
         bird.update(key_lst, screen)
         beams.update()
         beams.draw(screen)
-        gravities.update()
-        gravities.draw(screen)
         emys.update()
         emys.draw(screen)
         bombs.update()
@@ -342,6 +329,9 @@ def main():
         exps.update()
         exps.draw(screen)
         score.update(screen)
+
+        life.update(screen)  # 追加機能１：ライフを更新・描画
+
         pg.display.update()
         tmr += 1
         clock.tick(50)
